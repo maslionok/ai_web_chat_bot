@@ -88,24 +88,31 @@ chatwootSocket.onopen = () => {
 
 chatwootSocket.onmessage = (event) => {
   const data = JSON.parse(event.data);
-  console.log('[DEBUG] WebSocket message received:', data); // Debugging print
-
   if (data.type === 'ping' || !data.message) return;
 
-  const messageData = data.message.data;
-  console.log('[DEBUG] Parsed message data:', messageData); // Debugging print
+  const messageData = data.message;
+  if (!messageData || !messageData.data) return;
 
-  if (messageData && messageData.message_type === 1) { // Check if it's an outgoing message (from agent)
-    const message = messageData.content;
-    const sender = messageData.sender.name || "Agent"; // Use sender's name or default to "Agent"
-    console.log(`[DEBUG] Incoming message from ${sender}:`, message); // Debugging print
-    append('bot', `${sender}: ${message}`); // Display the message in the chat box
+  const message = messageData.data;
+
+  // print(message.content)
+  
+  // Check if it's a message from an agent (message_type: 1 indicates outgoing message from agent)
+  if (message.message_type === 1 && message.content) {
+    // Get the sender name, fallback to "Human Agent" if not available
+    const senderName = message.sender?.name || "Human Agent";
+    // Display the message in the chat with the agent's name
+    append('agent', `${senderName}: ${message.content}`);
+    // Auto-scroll to the latest message
+    box.scrollTop = box.scrollHeight;
   }
 };
 
 chatwootSocket.onclose = () => {
   console.log('Disconnected from Chatwoot WebSocket');
 };
+
+
 
 // Hook up send
 send.onclick = () => {

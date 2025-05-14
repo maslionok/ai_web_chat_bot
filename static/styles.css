@@ -1,0 +1,6 @@
+.message.agent {
+    background-color: #4a9eff;
+    color: white;
+    align-self: flex-left;
+    border-radius: 15px 15px 15px 5px;
+}

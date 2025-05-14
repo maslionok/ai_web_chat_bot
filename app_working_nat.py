@@ -337,43 +337,44 @@ def chat():
 @app.route('/chatwoot/webhook', methods=['POST'])
 def chatwoot_webhook():
     payload = request.get_json(force=True)
-    print("[DEBUG] Webhook payload received:", payload)  # Debugging print
+    # print("[DEBUG] Webhook payload received:", payload)  # Debugging print
 
     event = payload.get("event") or payload.get("webhook")
    
 
-    if event == "message.created":
-        data = payload["data"]
-       
+    # Handle receiving a message
+    if event == "conversation_typing_off":
+        # Extract conversation ID and message from the payload
+        conv_id = payload.get("conversation", {}).get("id")
+        messages = payload.get("conversation", {}).get("messages", [])
+        message = messages[0].get("content") if messages else None
 
-        conv_id = data["conversation"]["id"]
-        message = data["message"]["content"]
-        sender = data["sender"].get("identifier")
-       
+        # # If user said "talk to a human"
+        # if message:
+        #     endpoint = f"{CHATWOOT_BASE_URL}/api/v1/accounts/{CHATWOOT_ACCOUNT_ID}/conversations/{conv_id}/messages"
+      
+        #     body = {
+        #         "content": f"User requested human intervention: {message}",
+        #         "message_type": 1,
+        #         "private": False
+        #     }
+        #     headers = {
+        #         "api_access_token": CHATWOOT_API_TOKEN,
+        #         "Content-Type": "application/json"
+        #     }
 
-        # if user said “talk to a human”
-        if "talk to human" in message.lower():
-           
-
-            endpoint = f"{CHATWOOT_BASE_URL.rstrip}/api/v1/conversations/{conv_id}/messages"
-            body = {
-              "content": f"User requested human intervention: {message}",
-              "message_type": 1,
-              "private": False
-            }
-            headers = {
-              "api_access_token": CHATWOOT_API_TOKEN,
-              "Content-Type": "application/json"
-            }
-
-            try:
-                r = httpx.post(endpoint, json=body, headers=headers, timeout=10)
-                r.raise_for_status()
-                
-            except Exception as e:
-                print("[ERROR] Failed to escalate:", e)
+        #     try:
+        #         r = requests.post(endpoint, json=body, headers=headers, timeout=10)
+        #         r.raise_for_status()
+        #     except Exception as e:
+        #         print("[ERROR] Failed to escalate:", e)
+        print(f"Human asnwer: {message}")
+        
 
     return "", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
+
+
