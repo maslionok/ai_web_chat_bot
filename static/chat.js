@@ -112,7 +112,50 @@ chatwootSocket.onclose = () => {
   console.log('Disconnected from Chatwoot WebSocket');
 };
 
+const sessionId = 'chat_' + Date.now();
 
+let lastMessageCount = 0;
+let isFirstLoad = true;
+
+// Fetch all messages from Flask
+async function fetchMessages() {
+  try {
+    const res = await fetch(`/api/messages/${sessionId}`);
+    const messages = await res.json();
+    // add console.log to see the messages
+    console.log("Fetched messages:", messages);
+
+    
+    if (!messages || messages.length === 0) {
+      return;
+    }
+
+    // Only remove non-persistent loading indicators
+    const loaders = box.querySelectorAll('.message.bot:not(.persist)');
+    loaders.forEach(loader => {
+      if (loader.textContent === '...') {
+        loader.remove();
+      }
+    });
+
+    // Reset messages if count decreased (new session)
+    if (messages.length < lastMessageCount) {
+      box.innerHTML = '';
+      lastMessageCount = 0;
+    }
+
+    // Add new messages
+    if (messages.length > lastMessageCount) {
+      const newMessages = messages.slice(lastMessageCount);
+      newMessages.forEach(msg => {
+        append(msg.role === 'user' ? 'user' : 'bot', msg.content);
+      });
+      lastMessageCount = messages.length;
+    }
+  } catch (err) {
+    console.error("Polling error:", err);
+  }
+}
 
 // Hook up send
 send.onclick = () => {
@@ -124,3 +167,7 @@ input.addEventListener('keydown', e => {
     send.click();
   }
 });
+
+// Poll for new messages every 200ms
+setInterval(fetchMessages, 200);
+fetchMessages();

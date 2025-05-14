@@ -13,6 +13,7 @@ import faiss
 import httpx
 from openai import OpenAI
 from dotenv import load_dotenv
+from flask_socketio import SocketIO
 
 import os
 import glob
@@ -251,6 +252,7 @@ def ask_chatgpt(question, chunks, model="gpt-4.1-mini"):
 
 # ─── Flask app setup ─────────────────────────────────────────────────────────
 app = Flask(__name__)
+socketio = SocketIO(app)
 
 @app.route("/")
 def home():
@@ -335,46 +337,69 @@ def chat():
 
 
 @app.route('/chatwoot/webhook', methods=['POST'])
-def chatwoot_webhook():
-    payload = request.get_json(force=True)
-    # print("[DEBUG] Webhook payload received:", payload)  # Debugging print
+def receive_chatwoot_reply():
+    data = request.json
+    message_type = data.get("message_type")
+    content = data.get("content")
+    sender_type = data.get("sender", {}).get("type")
+    chatwoot_conversation_id = str(data.get("conversation", {}).get("id", "default"))
 
-    event = payload.get("event") or payload.get("webhook")
-   
+    print(f"📨 Webhook: type={message_type}, sender={sender_type}, content={content}")
 
-    # Handle receiving a message
-    if event == "conversation_typing_off":
-        # Extract conversation ID and message from the payload
-        conv_id = payload.get("conversation", {}).get("id")
-        messages = payload.get("conversation", {}).get("messages", [])
-        message = messages[0].get("content") if messages else None
+    if content and message_type == "outgoing":  # Accept all outgoing messages
+        print(f"📨 Outgoing message: {content}")
+        with shelve.open(CACHE_PATH) as db:
+            # Find the associated chat session
+            mapped_session = None
+            for key in db.keys():
+                if key.startswith("chatwoot_map||") and db[key] == chatwoot_conversation_id:
+                    mapped_session = db.get(f"session_map||{chatwoot_conversation_id}")
+                    break
+            
+            if mapped_session:
+                # Save to mapped session
+                history_key = f"chat_history||{mapped_session}"
+                messages = db.get(history_key, [])
+                messages.append({"role": "bot", "content": content})
+                db[history_key] = messages
+                print(f"✅ Added to mapped session {mapped_session}")
+            else:
+                # Store in general chat history if no mapping exists
+                chat_key = "global_chat_history"
+                messages = db.get(chat_key, [])
+                messages.append({"role": "bot", "content": content})
+                db[chat_key] = messages
+                print("✅ Added to global chat history")
+    return jsonify({"status": "received"}), 200
 
-        # # If user said "talk to a human"
-        # if message:
-        #     endpoint = f"{CHATWOOT_BASE_URL}/api/v1/accounts/{CHATWOOT_ACCOUNT_ID}/conversations/{conv_id}/messages"
-      
-        #     body = {
-        #         "content": f"User requested human intervention: {message}",
-        #         "message_type": 1,
-        #         "private": False
-        #     }
-        #     headers = {
-        #         "api_access_token": CHATWOOT_API_TOKEN,
-        #         "Content-Type": "application/json"
-        #     }
-
-        #     try:
-        #         r = requests.post(endpoint, json=body, headers=headers, timeout=10)
-        #         r.raise_for_status()
-        #     except Exception as e:
-        #         print("[ERROR] Failed to escalate:", e)
-        print(f"Human asnwer: {message}")
+@app.route('/api/messages/<conversation_id>', methods=['GET'])
+def get_messages(conversation_id):
+    with shelve.open(CACHE_PATH) as db:
+        # Get messages specific to this session
+        history_key = f"chat_history||{conversation_id}"
+        messages = db.get(history_key, [])
         
+        
+        # Also get any global messages
+        global_messages = db.get("global_chat_history", [])
+        if global_messages:
+            # Merge messages without duplicates
+            seen = set(msg["content"] for msg in messages)
+            for msg in global_messages:
+                if msg["content"] not in seen:
+                    messages.append(msg)
+                    seen.add(msg["content"])
+            # Save merged messages to session
+            db[history_key] = messages
+            # Clear global messages
+            db["global_chat_history"] = []
+            
+    return jsonify(messages)
 
-    return "", 200
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+
 
 
 
