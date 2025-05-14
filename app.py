@@ -1,3 +1,4 @@
+# Import necessary libraries
 import asyncio
 import glob
 import os
@@ -18,8 +19,8 @@ from flask_socketio import SocketIO
 from openai import OpenAI
 from PyPDF2 import PdfReader
 
-
 # ─── Load configuration ───────────────────────────────────────────────────────
+# Load environment variables from .env file
 load_dotenv()
 OPENAI_API_KEY       = os.getenv("OPENAI_API_KEY", "")
 MAGENTO_BASE_URL     = os.getenv("MAGENTO_BASE_URL", "").rstrip('/')
@@ -28,6 +29,7 @@ MAGENTO_BEARER_TOKEN = os.getenv("MAGENTO_BEARER_TOKEN", "")
 DEFAULT_MAX_PAGES    = int(os.getenv("DEFAULT_MAX_PAGES", "200"))
 
 # ─── Cache setup ──────────────────────────────────────────────────────────────
+# Setup cache directory and database paths
 CACHE_DIR  = os.getenv("CACHE_DIR", ".cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 CACHE_DB   = os.getenv("CACHE_DB", "cache")
@@ -36,15 +38,16 @@ CACHE_DB_CHATWOOT   = os.getenv("CACHE_DB_CHATWOOT", "chatwoot")
 CACHE_PATH_CHATWOOT = os.path.join(CACHE_DIR, CACHE_DB_CHATWOOT)
 
 # ─── Initialize clients ───────────────────────────────────────────────────────
+# Initialize OpenAI client and FAISS index
 client = OpenAI(api_key=OPENAI_API_KEY)
 faiss_index = None
 
 # ─── Chatwoot configuration ───────────────────────────────────────────────────
+# Load Chatwoot credentials and validate them
 CHATWOOT_BASE_URL   = os.getenv("CHATWOOT_BASE_URL", "https://app.chatwoot.com")
 CHATWOOT_ACCOUNT_ID = os.getenv("CHATWOOT_ACCOUNT_ID")
 CHATWOOT_INBOX_ID   = os.getenv("CHATWOOT_INBOX_ID")
 CHATWOOT_API_TOKEN  = os.getenv("CHATWOOT_API_TOKEN")
-# Validate Chatwoot credentials
 if not all([CHATWOOT_ACCOUNT_ID, CHATWOOT_INBOX_ID, CHATWOOT_API_TOKEN]):
     raise RuntimeError("Missing Chatwoot configuration: ensure ACCOUNT_ID, INBOX_ID, and API_TOKEN are set")
 
@@ -54,12 +57,16 @@ CHATWOOT_HEADERS = {
 }
 
 # ─── Track escalated conversations ───────────────────────────────────────────
+# Dictionary to track conversations escalated to human agents
 escalated_conversations = {}
 
 # ─── Chatwoot helper functions ────────────────────────────────────────────────
 def create_chatwoot_conversation(user_name: str = "Chatbot User"):
     """
     Create a new Chatwoot conversation and return its ID.
+    - Generates a random email for the user.
+    - Creates a contact in Chatwoot.
+    - Starts a new conversation for the contact.
     """
     random_number = np.random.randint(100000, 999999)
     payload = {
@@ -96,8 +103,10 @@ def create_chatwoot_conversation(user_name: str = "Chatbot User"):
 
 def send_to_human_agent(message: str, user_name: str = "Chatbot User"):
     """
-    1) Create or reuse a Chatwoot conversation
-    2) Send the user's message into it
+    Escalate a conversation to a human agent.
+    - Reuses an existing conversation if available.
+    - Filters out bot messages containing only "...".
+    - Sends the user's message to the Chatwoot conversation.
     """
     if user_name in escalated_conversations:
         conv_id = escalated_conversations[user_name]
@@ -125,6 +134,7 @@ def send_to_human_agent(message: str, user_name: str = "Chatbot User"):
     return True
 
 # ─── Magento headers ───────────────────────────────────────────────────────────
+# Headers for Magento API requests
 MAGENTO_HEADERS = {
     "Authorization": f"Bearer {MAGENTO_BEARER_TOKEN}",
     "Content-Type": "application/json"
@@ -132,6 +142,11 @@ MAGENTO_HEADERS = {
 
 # ─── Crawling utilities ──────────────────────────────────────────────────────
 async def fetch_url(session, url):
+    """
+    Fetch a URL asynchronously.
+    - Extracts and cleans HTML content.
+    - Returns the URL, text content, and parsed BeautifulSoup object.
+    """
     try:
         r = await session.get(url, timeout=10)
         if r.status_code == 200 and "text/html" in r.headers.get("Content-Type", ""):
@@ -144,6 +159,11 @@ async def fetch_url(session, url):
     return url, None, None
 
 async def crawl_website_async(start_url, max_pages=DEFAULT_MAX_PAGES):
+    """
+    Crawl a website asynchronously.
+    - Visits up to `max_pages` pages starting from `start_url`.
+    - Extracts text content from each page.
+    """
     visited, to_visit, texts = set(), [start_url], []
     base = "{0.scheme}://{0.netloc}".format(urlparse(start_url))
     async with httpx.AsyncClient(follow_redirects=True) as session:
@@ -163,6 +183,11 @@ async def crawl_website_async(start_url, max_pages=DEFAULT_MAX_PAGES):
 
 # ─── Magento API fetcher ─────────────────────────────────────────────────────
 async def fetch_magento_products(page_size=100):
+    """
+    Fetch products from Magento API.
+    - Paginates through the API to retrieve all products.
+    - Returns a list of product dictionaries.
+    """
     items = []
     async with httpx.AsyncClient() as session:
         page = 1
@@ -180,6 +205,10 @@ async def fetch_magento_products(page_size=100):
 
 # ─── Data flattening ─────────────────────────────────────────────────────────
 def product_to_text(product: dict) -> str:
+    """
+    Convert a Magento product dictionary into a human-readable text format.
+    - Includes SKU, name, price, status, and custom attributes.
+    """
     out = [
         f"SKU: {product.get('sku')}",
         f"Name: {product.get('name')}",
@@ -192,6 +221,10 @@ def product_to_text(product: dict) -> str:
 
 # ─── PDF loader ──────────────────────────────────────────────────────────────
 def load_pdfs(folder="extra_info"):
+    """
+    Load and extract text from all PDF files in the specified folder.
+    - Returns a list of document texts.
+    """
     docs = []
     if not os.path.isdir(folder): return docs
     for path in glob.glob(os.path.join(folder, "*.pdf")):
@@ -206,10 +239,17 @@ def load_pdfs(folder="extra_info"):
 
 # ─── Text splitting & embedding ───────────────────────────────────────────────
 def split_text(text, max_tokens=300):
+    """
+    Split a large text into smaller chunks of up to `max_tokens` words.
+    """
     words = text.split()
     return [' '.join(words[i:i+max_tokens]) for i in range(0, len(words), max_tokens)]
 
 def embed_chunks(chunks, batch_size=100):
+    """
+    Generate embeddings for text chunks using OpenAI API.
+    - Processes chunks in batches for efficiency.
+    """
     embeddings = []
     for i in range(0, len(chunks), batch_size):
         resp = client.embeddings.create(model="text-embedding-3-small", input=chunks[i:i+batch_size])
@@ -218,6 +258,10 @@ def embed_chunks(chunks, batch_size=100):
 
 # ─── Language detection & ChatGPT call ────────────────────────────────────────
 def detect_language(question):
+    """
+    Detect the language of a given question using OpenAI's ChatGPT.
+    - Returns the detected language name.
+    """
     resp = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[{"role":"system","content":"Detect language and reply with only the language name."},
@@ -226,6 +270,11 @@ def detect_language(question):
     return resp.choices[0].message.content.strip()
 
 def ask_chatgpt(question, chunks, model="gpt-4.1-mini"):
+    """
+    Query ChatGPT with a question and context.
+    - Combines context chunks into a single prompt.
+    - Returns the model's response.
+    """
     context = "\n\n".join(chunks)
     lang = detect_language(question)
     sys_msg = (f"You are a precise assistant. Answer ONLY based on provided context. Respond in {lang}. "
@@ -244,10 +293,18 @@ socketio = SocketIO(app)
 
 @app.route("/")
 def home():
+    """
+    Render the home page.
+    """
     return render_template("index.html")
 
 @app.route("/api/chat", methods=["POST"])
 def chat():
+    """
+    Handle chat API requests.
+    - Processes user questions and retrieves answers from ChatGPT.
+    - Supports crawling, Magento data, and human-agent escalation.
+    """
     data      = request.json or {}
     question  = data.get('question', '').strip()
     model     = data.get('model', 'gpt-4.1-mini')
@@ -381,6 +438,10 @@ def chat():
 
 @app.route('/chatwoot/webhook', methods=['POST'])
 def receive_chatwoot_reply():
+    """
+    Handle incoming Chatwoot webhook events.
+    - Processes outgoing messages and maps them to chat sessions.
+    """
     data = request.json
     message_type = data.get("message_type")
     content = data.get("content")
@@ -417,6 +478,10 @@ def receive_chatwoot_reply():
 
 @app.route('/api/messages/<conversation_id>', methods=['GET'])
 def get_messages(conversation_id):
+    """
+    Retrieve chat messages for a specific conversation.
+    - Merges session-specific and global messages.
+    """
     with shelve.open(CACHE_PATH_CHATWOOT) as db:
         # Get messages specific to this session
         history_key = f"chat_history||{conversation_id}"
@@ -440,6 +505,7 @@ def get_messages(conversation_id):
     return jsonify(messages)
 
 if __name__ == '__main__':
+    # Run the Flask app
     app.run(host='0.0.0.0', port=5000, debug=True)
 
 
