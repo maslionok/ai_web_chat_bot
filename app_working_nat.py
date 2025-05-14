@@ -45,6 +45,8 @@ CACHE_DIR  = os.getenv("CACHE_DIR", ".cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 CACHE_DB   = os.getenv("CACHE_DB", "cache")
 CACHE_PATH = os.path.join(CACHE_DIR, CACHE_DB)
+CACHE_DB_CHATWOOT   = os.getenv("CACHE_DB_CHATWOOT", "chatwoot")
+CACHE_PATH_CHATWOOT = os.path.join(CACHE_DIR, CACHE_DB_CHATWOOT)
 
 # ─── Initialize clients ───────────────────────────────────────────────────────
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -353,7 +355,7 @@ def receive_chatwoot_reply():
 
     if content and message_type == "outgoing":  # Accept all outgoing messages
         print(f"📨 Outgoing message: {content}")
-        with shelve.open(CACHE_PATH) as db:
+        with shelve.open(CACHE_PATH_CHATWOOT) as db:
             # Find the associated chat session
             mapped_session = None
             for key in db.keys():
@@ -379,7 +381,7 @@ def receive_chatwoot_reply():
 
 @app.route('/api/messages/<conversation_id>', methods=['GET'])
 def get_messages(conversation_id):
-    with shelve.open(CACHE_PATH) as db:
+    with shelve.open(CACHE_PATH_CHATWOOT) as db:
         # Get messages specific to this session
         history_key = f"chat_history||{conversation_id}"
         messages = db.get(history_key, [])
