@@ -273,7 +273,12 @@ def chat():
         full_conversation = "\n".join(
             [f"{msg['who']}: {msg['text']}" for msg in history if not (msg['who'] == 'bot' and msg['text'] == "...")]
         )
-        send_to_human_agent(full_conversation, user_name)
+        # send only last message to human agent and remove "user:" prefix
+        last_message = full_conversation.split("\n")[-1]
+        if last_message.startswith("user: "):
+            last_message = last_message[6:]
+
+        send_to_human_agent(last_message, user_name)
         return jsonify({
             "answer": "Your message has been forwarded to a human agent. They will assist you shortly."
         }), 200
