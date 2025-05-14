@@ -23,7 +23,7 @@ from PyPDF2 import PdfReader
 load_dotenv()
 OPENAI_API_KEY       = os.getenv("OPENAI_API_KEY", "")
 MAGENTO_BASE_URL     = os.getenv("MAGENTO_BASE_URL", "").rstrip('/')
-MAGENTO_STORE_CODE   = os.getenv("MAGENTO_STORE_CODE", "eu1_EN")
+MAGENTO_STORE_CODE   = os.getenv("MAGENTO_STORE_CODE", "")
 MAGENTO_BEARER_TOKEN = os.getenv("MAGENTO_BEARER_TOKEN", "")
 DEFAULT_MAX_PAGES    = int(os.getenv("DEFAULT_MAX_PAGES", "200"))
 
@@ -61,7 +61,6 @@ def create_chatwoot_conversation(user_name: str = "Chatbot User"):
     """
     Create a new Chatwoot conversation and return its ID.
     """
-    external_id = str(int(time.time() * 1000))
     random_number = np.random.randint(100000, 999999)
     payload = {
         "name": user_name,
@@ -273,7 +272,57 @@ def chat():
         }), 200
 
     # Human-Agent handoff detection
-    triggers = ["human", "agent", "support", "operator", "representative"]
+    triggers = [
+        # English
+        "human",
+        "agent",
+        "support",
+        "operator",
+        "representative",
+        "live person",
+        "real person",
+        "customer service",
+        "help",
+        "assistance",
+        "talk to a real person",
+        "speak to an agent",
+        "connect me to someone",
+        "chat with support",
+        "I need help from a real person",
+        "I want to talk to someone",
+
+        # German
+        "Mensch",
+        "Agent",
+        "Support",
+        "Operator",
+        "Vertreter",
+        "Live-Mitarbeiter",
+        "echter Mensch",
+        "Kundenservice",
+        "Hilfe",
+        "mit jemandem sprechen",
+        "zum menschlichen Support",
+        "an einen Mitarbeiter weiterleiten",
+        "Ich möchte mit einem Menschen sprechen",
+        "Bitte verbinden Sie mich mit einem Mitarbeiter",
+
+        # Polish
+        "człowiek",
+        "agent",
+        "wsparcie",
+        "operator",
+        "przedstawiciel",
+        "obsługa klienta",
+        "pomoc",
+        "rozmowa z człowiekiem",
+        "połącz mnie z żywą osobą",
+        "przełącz na konsultanta",
+        "chcę z kimś porozmawiać",
+        "porozmawiaj z człowiekiem",
+        "Chcę rozmawiać z prawdziwą osobą",
+        "Proszę o przekierowanie do konsultanta",
+    ]
     if any(t in question.lower() for t in triggers):
         full_conversation = "\n".join(
             [f"{msg['who']}: {msg['text']}" for msg in history if not (msg['who'] == 'bot' and msg['text'] == "...")]
